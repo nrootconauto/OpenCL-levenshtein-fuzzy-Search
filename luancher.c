@@ -47,16 +47,22 @@ void CL_DL_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,int alphab
 	//make matrices
 	size_t size=n*(m+1)*sizeof(cl_int);
 	cl_int* X=alloca(size);
+	memset(X,0,size);
 	cl_int* D=alloca(size);
-	cl_char alpha=alloca(alphabetSize);
+	memset(D,0,size);
+	cl_char* alpha=alloca(alphabetSize);
+	memcpy(alpha,"ACGT",4);
 	cl_mem alphaBuffer=clCreateBuffer(context,CL_MEM_READ_WRITE,alphabetSize,NULL,NULL);
+	
 	cl_mem xBuffer=clCreateBuffer(context,CL_MEM_READ_WRITE,size,NULL,NULL);
 	cl_mem dBuffer=clCreateBuffer(context,CL_MEM_READ_WRITE,size,NULL,NULL);
 	clEnqueueWriteBuffer(line,xBuffer,CL_TRUE,0,size,X,0,NULL,NULL);
 	clEnqueueWriteBuffer(line,dBuffer,CL_TRUE,0,size,D,0,NULL,NULL);
-	clEnqueueWriteBuffer(line,dBuffer,CL_TRUE,0,alphabetSize,&alpha,0,NULL,NULL);
+	clEnqueueWriteBuffer(line,alphaBuffer,CL_TRUE,0,alphabetSize,alpha,0,NULL,NULL);
 	cl_mem tBuffer=clCreateBuffer(context,CL_MEM_READ_WRITE,n,NULL,NULL);
 	cl_mem pBuffer=clCreateBuffer(context,CL_MEM_READ_WRITE,m,NULL,NULL);
+	clEnqueueWriteBuffer(line,tBuffer,CL_TRUE,0,n,t,0,NULL,NULL);
+	clEnqueueWriteBuffer(line,pBuffer,CL_TRUE,0,m,p,0,NULL,NULL);
 	clSetKernelArg(hello,0,sizeof(cl_mem),&xBuffer);
 	clSetKernelArg(hello,1,sizeof(cl_mem),&dBuffer);
 	clSetKernelArg(hello,2,sizeof(cl_mem),&alphaBuffer);
@@ -64,12 +70,18 @@ void CL_DL_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,int alphab
 	clSetKernelArg(hello,4,sizeof(cl_mem),&pBuffer);
 	clSetKernelArg(hello,5,sizeof(cl_int),&n);
 	clSetKernelArg(hello,6,sizeof(cl_int),&m);
-	size_t rowSize=n;
+	size_t rowSize=(m+1);
 	size_t offset=0;
-	size_t rowsSize=rowSize*(m+1); //of ALL rows
+	size_t rowsSize=rowSize*(n); //of ALL rows
 	clEnqueueNDRangeKernel(line,hello,1,&offset,&rowsSize,&rowSize,0,NULL,NULL);
 	//clEnqueueTask(line,hello,0,NULL,NULL);
+	clEnqueueReadBuffer(line,xBuffer,CL_TRUE,0,size,X,0,NULL,NULL);
 	clFinish(line);
+	for(int x=0;x!=m+1;x++) {
+		for(int y=0;y!=n;y++)
+			printf("%i,",X[y*(m+1)+x]);
+		printf("\n");
+	}
 	clReleaseContext(context);
 	//}
 	clReleaseDevice(device);
