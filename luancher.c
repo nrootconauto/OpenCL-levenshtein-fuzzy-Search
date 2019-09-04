@@ -4,18 +4,68 @@
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
-char* loadFile(const char* name) {
+void CL_fuzzy_free(CL_launcher* launcher) {
+	clReleaseKernel(launcher->r2);
+	clReleaseKernel(launcher->r3);
+	clReleaseProgram(launcher->program);
+	clReleaseContext(launcher->context);
+	clReleaseDevice(launcher->deviceId);
+}
+char* loadFile(const char* name,size_t* size) {
 	FILE* file=fopen(name,"r");
 	fseek(file,0,SEEK_SET);
 	size_t start,end;
 	start=ftell(file);
 	fseek(file,0,SEEK_END);
 	end=ftell(file);
-	char* retVal=malloc(1+end-start);
+	char* retVal=malloc(end-start);
+	*size=end-start;
 	fseek(file,0,SEEK_SET);
 	fread(retVal,end-start,1,file);
-	retVal[end-start]=0;
 	return retVal;
+}
+CL_launcher CL_fuzzy_load(int p,int d,const char* binaryLocation) {
+	cl_uint numPlatforms;
+	clGetPlatformIDs(-1,NULL,&numPlatforms);
+	cl_platform_id* platforms=alloca(numPlatforms*sizeof(cl_platform_id));
+	clGetPlatformIDs(1,platforms,&numPlatforms);
+	cl_int i=p;
+	cl_uint devicesCount;
+	clGetDeviceIDs(platforms[i],CL_DEVICE_TYPE_ALL,-1,NULL,&devicesCount);
+	cl_device_id* devices=malloc(devicesCount*sizeof(cl_device_id));
+	clGetDeviceIDs(platforms[i],CL_DEVICE_TYPE_ALL,1,devices,&devicesCount);
+	cl_device_id device=devices[d];
+	free(devices);
+	cl_context context=clCreateContext(NULL,1,&device,NULL,NULL,NULL);
+	size_t binSize;
+	char* binary=loadFile(binaryLocation,&binSize);
+	printf("Loading binary:%i\n",binSize);
+	cl_program program=clCreateProgramWithBinary(context,1,&device,&binSize,&binary,NULL,NULL);
+	printf("Done Loading binary\n",binSize);
+	free(binary);
+	clBuildProgram(program,1,&device,NULL,NULL,NULL);
+	cl_build_status errorLog;
+	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_STATUS,sizeof(errorLog),&errorLog,NULL);
+	size_t logSize;
+	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_LOG,0,NULL,&logSize);
+	char log[logSize+1];
+	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_LOG,logSize,log,NULL);
+	cl_kernel hello=clCreateKernel(program,"levensthein",NULL);
+	cl_kernel world=clCreateKernel(program,"asm",NULL);
+	log[logSize]=0;
+	printf("===[BUILD LOG]===\n%s\n",log);
+	printf(log);
+	CL_launcher retVal={
+		.deviceId=device,
+		.platformId=platforms[i],
+		.program=program,
+		.r2=hello,
+		.r3=world,
+		.deviceId=device,
+		.context=context
+	};
+	return retVal;
+	//make the luancher
 }
 //todo make me saucy
 int secondIntFactorization(int number,int maxCores) {
@@ -30,36 +80,14 @@ int secondIntFactorization(int number,int maxCores) {
 	}
 	return min;
 }
-void CL_DL_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,char* alphabet,CL_launcher* launcher) {
+void CL_fuzzy_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,char* alphabet,CL_launcher* launcher) {
 	int alphabetSize=strlen(alphabet);
-	cl_uint numPlatforms;
-	clGetPlatformIDs(-1,NULL,&numPlatforms);
-	printf("How Many Platforms:%i\n",(int)numPlatforms);
-	cl_platform_id* platforms=alloca(numPlatforms*sizeof(cl_platform_id));
-	clGetPlatformIDs(1,platforms,&numPlatforms);
-	//for(cl_uint i=0;i!=numPlatforms;i++) {
-	cl_int i=0;
-	cl_uint devicesCount;
-	clGetDeviceIDs(platforms[i],CL_DEVICE_TYPE_ALL,-1,NULL,&devicesCount);
-	printf("Devices Count:%i\n",(int)devicesCount);
-	cl_device_id device;
-	clGetDeviceIDs(platforms[i],CL_DEVICE_TYPE_ALL,1,&device,NULL);
-	//create a context
-	cl_context context=clCreateContext(NULL,1,&device,NULL,NULL,NULL);
-	char* source=loadFile("test.cl");
-	size_t lengths=strlen(source);
-	cl_program program=clCreateProgramWithSource(context,1,&source,&lengths,NULL);
-	clBuildProgram(program,1,&device,NULL,NULL,NULL);
-	cl_build_status errorLog;
-	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_STATUS,sizeof(errorLog),&errorLog,NULL);
-	size_t logSize;
-	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_LOG,0,NULL,&logSize);
-	char log[logSize+1];
-	clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_LOG,logSize,log,NULL);
-	log[logSize]=0;
-	printf("===[BUILD LOG]===\n%s\n",log);
-	cl_kernel hello=clCreateKernel(program,"levensthein",NULL);
-	cl_kernel world=clCreateKernel(program,"asm",NULL);
+	//cl_program program=launcher->program;
+	//cl_program platforms=launcher->platformId
+	cl_kernel hello=launcher->r2;
+	cl_kernel world=launcher->r3;
+	cl_device_id device=launcher->deviceId;
+	cl_context context=launcher->context;
 	cl_command_queue line=clCreateCommandQueue(context,device,CL_QUEUE_PROFILING_ENABLE,NULL);
 	//make matrices
 	size_t size=alphabetSize*(n+1)*sizeof(cl_int);
@@ -109,7 +137,6 @@ void CL_DL_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,char* alph
 	offset=0;
 	while(offset!=(m+1)*(n+1)) {
 		clEnqueueNDRangeKernel(line,world,1,&offset,&rowsSize,&rowSize,0,NULL,NULL);
-		clFinish(line);
 		offset+=m+1;
 		rowsSize=(m+1);
 	}
@@ -123,9 +150,14 @@ void CL_DL_launch(cl_short* writeTo,char* t,char* p,cl_int n,cl_int m,char* alph
 			printf("%i,",D[y*(m+1)+x]);
 		printf("\n");
 	}
-	clFinish(line);
-	
-	clReleaseContext(context);
-	//}
-	clReleaseDevice(device);
+	memcpy(writeTo,D,(n+1)*(m+1)*sizeof(int));
+	free(D);
+	free(X);
+	free(alpha);
+	clReleaseMemObject(xBuffer);
+	clReleaseMemObject(dBuffer);
+	clReleaseMemObject(tBuffer);
+	clReleaseMemObject(pBuffer);
+	clReleaseMemObject(alphaBuffer);
+	clReleaseCommandQueue(line);
 }
