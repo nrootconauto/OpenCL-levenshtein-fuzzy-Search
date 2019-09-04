@@ -52,7 +52,7 @@ FFLAGS=
 ASFLAGS=
 
 # Link Libraries and Options
-LDLIBSOPTIONS=`pkg-config --libs ocl-icd --cflags` `pkg-config --libs --cflags pocl`  
+LDLIBSOPTIONS=`pkg-config --libs ocl-icd --cflags` `pkg-config --libs --cflags pocl` -lm  
 
 # Build Targets
 .build-conf: ${BUILD_SUBPROJECTS}

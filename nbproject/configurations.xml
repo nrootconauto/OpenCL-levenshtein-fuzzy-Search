@@ -40,6 +40,7 @@
           <linkerLibItems>
             <linkerOptionItem>`pkg-config --libs ocl-icd --cflags`</linkerOptionItem>
             <linkerOptionItem>`pkg-config --libs --cflags pocl`</linkerOptionItem>
+            <linkerOptionItem>-lm</linkerOptionItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>
